@@ -1,0 +1,9 @@
+/* Dashboard-specific styles */
+.attention-item { display: flex; gap: 10px; align-items: flex-start; }
+.attention-item .badge { margin-top: 2px; }
+.sync-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.sync-row:last-child { border-bottom: 0; }
+.currency-split { font-size: 15px; line-height: 1.35; }
+.currency-split div { white-space: nowrap; }
+.dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 1100px) { .dash-grid { grid-template-columns: 1fr; } }

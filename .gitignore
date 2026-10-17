@@ -1,0 +1,14 @@
+node_modules/
+functions/node_modules/
+.env
+functions/.env
+functions/.env.*
+!functions/.env.example
+*.local
+*service-account*.json
+*-sa.json
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+.DS_Store

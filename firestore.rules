@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// শুধু আপনার নিজের লগইন-ইমেইল সব ডেটা পড়তে/লিখতে পারবে।
+// নিচের ইমেইলটা বদলে Firebase-এ যে ইমেইল দিয়ে লগইন করবেন সেটা দিন (ছোট হাতের অক্ষরে)।
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email in ['YOUR_EMAIL@gmail.com'];
+    }
+    match /{document=**} {
+      allow read, write: if isOwner();
+    }
+  }
+}

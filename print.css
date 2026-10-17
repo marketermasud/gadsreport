@@ -1,0 +1,25 @@
+/* ==========================================================================
+   Print / browser "Save as PDF" fallback — A4, no app chrome.
+   Page counters use CSS page-margin boxes (Chromium 131+). The primary
+   "Download PDF" button builds a real PDF with pdf-lib (js/pdf-export.js).
+   ========================================================================== */
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm;
+  @bottom-left { content: "Masud PPC — Confidential client report"; font: 8pt Inter, Arial, sans-serif; color: #7a8699; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 8pt Inter, Arial, sans-serif; color: #7a8699; }
+}
+
+@media print {
+  html, body { background: #fff !important; }
+  .sidebar, .topbar, .demo-ribbon, .no-print, .toast-stack, .modal-backdrop,
+  .page-header, .tabs, .workspace-head, .editor-panel, .portal-controls, .portal-side, .standalone-header { display: none !important; }
+  .app, .app.sidebar-collapsed { display: block; }
+  .content { padding: 0 !important; max-width: none; }
+  .editor-layout { display: block; }
+  .report-stage { background: none !important; padding: 0 !important; overflow: visible; }
+  .report-doc { box-shadow: none !important; border-radius: 0; padding: 0 !important; max-width: none; font-size: 10pt; }
+  .report-doc h2 { break-after: avoid; }
+  .report-doc .r-chart, .report-doc .r-kpi, .report-doc tr, .report-doc li { break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+}

@@ -1,0 +1,127 @@
+/* ==========================================================================
+   Masud PPC — design tokens & base styles
+   ========================================================================== */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+:root {
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #eef2f7;
+  --border: #e3e8ef;
+  --border-strong: #cfd7e3;
+
+  --text: #142033;
+  --text-2: #475569;
+  --text-3: #7a8699;
+
+  --accent: #1a73e8;          /* Google Ads blue */
+  --accent-strong: #1557b0;
+  --accent-soft: #e8f0fe;
+
+  --success: #188038;
+  --success-soft: #e6f4ea;
+  --warning: #b06000;
+  --warning-soft: #fef7e0;
+  --danger: #c5221f;
+  --danger-soft: #fce8e6;
+  --info: #5f6368;
+  --info-soft: #f1f3f4;
+
+  --chart-1: #1a73e8;
+  --chart-2: #12a37f;
+  --chart-3: #e8710a;
+  --chart-4: #9334e6;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.14);
+
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 68px;
+  --topbar-h: 60px;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1520;
+  --surface: #161e2b;
+  --surface-2: #1a2333;
+  --surface-3: #222d40;
+  --border: #2a3548;
+  --border-strong: #38465d;
+  --text: #e7ecf3;
+  --text-2: #b3bfcf;
+  --text-3: #8392a8;
+  --accent: #6ea8fe;
+  --accent-strong: #8ab8ff;
+  --accent-soft: #1d2d4a;
+  --success: #57c27a;
+  --success-soft: #16301f;
+  --warning: #f0b55a;
+  --warning-soft: #33280f;
+  --danger: #f28b82;
+  --danger-soft: #3a1c1b;
+  --info-soft: #232c3b;
+  --chart-1: #6ea8fe;
+  --chart-2: #3fcf9f;
+  --chart-3: #f5a25d;
+  --chart-4: #c08cff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 { margin: 0 0 0.5em; line-height: 1.25; font-weight: 600; color: var(--text); }
+h1 { font-size: 1.5rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.125rem; }
+h3 { font-size: 1rem; }
+h4 { font-size: 0.875rem; }
+p { margin: 0 0 0.75em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+small, .small { font-size: 12px; }
+code, pre { font-family: var(--mono); font-size: 12.5px; }
+pre { background: var(--surface-3); padding: 12px; border-radius: var(--radius-sm); overflow-x: auto; white-space: pre-wrap; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 20px 0; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.muted { color: var(--text-2); }
+.subtle { color: var(--text-3); }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.mono { font-family: var(--mono); }
+.hidden { display: none !important; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;
+}
+.pos { color: var(--success); }
+.neg { color: var(--danger); }
+.neutral { color: var(--text-3); }
+
+/* spacing utilities */
+.mt-0 { margin-top: 0; } .mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; } .mt-3 { margin-top: 24px; }
+.mb-0 { margin-bottom: 0; } .mb-1 { margin-bottom: 8px; } .mb-2 { margin-bottom: 16px; } .mb-3 { margin-bottom: 24px; }
+.flex { display: flex; } .items-center { align-items: center; } .justify-between { justify-content: space-between; }
+.gap-1 { gap: 8px; } .gap-2 { gap: 16px; } .wrap { flex-wrap: wrap; } .grow { flex: 1; }

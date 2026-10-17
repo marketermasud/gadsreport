@@ -1,0 +1,13 @@
+Campaign report (FICTIONAL SAMPLE DATA)
+"October 1, 2026 - October 3, 2026"
+Day,Campaign,Impr.,Clicks,Cost,Conversions,Conv. value,Qualified leads,Tracking status
+2026-10-01,Search – Emergency Plumbing,"1,312",74,$412.50,8.00,"3,360.00",6,ok
+2026-10-01,Search – Water Heaters,741,38,$171.20,4.00,"1,680.00",3,ok
+2026-10-01,PMax – Plumbing Services,488,26,$149.90,3.00,"1,260.00",2,ok
+2026-10-02,Search – Emergency Plumbing,"1,298",71,$398.10,7.00,"2,940.00",5,ok
+2026-10-02,Search – Water Heaters,760,40,$180.00,0.00,--,,partial
+2026-10-02,Search – Water Heaters,760,40,$180.00,0.00,--,,partial
+2026-10-03,Search – Emergency Plumbing,"1,350",77,$420.00,9.00,"3,780.00",7,ok
+2026-10-03,Search – Drain Cleaning,320,15,$66.00,1.00,420.00,1,ok
+2026-10-03,PMax – Plumbing Services,abc,24,$140.00,2.00,840.00,2,ok
+Total: Account,,"7,329",405,"$2,117.70",34.00,,,
