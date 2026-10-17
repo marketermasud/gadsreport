@@ -26,3 +26,24 @@
 - AI অ্যানালাইসিসে বাইরের AI সংযোগ বন্ধ; "rule-based draft" কাজ করবে।
 - ক্লায়েন্ট পোর্টাল/শেয়ার-লিংক এই ভার্সনে ব্যবহারের জন্য নয়।
 - `.csv` ফাইল দুটো ইমপোর্ট চেষ্টা করার নমুনা।
+
+
+## Multi-user access fix (patched build)
+
+This project uses **Cloud Firestore**, not Realtime Database. Deploy rules from `firestore.rules` in
+Firebase Console → Build → Firestore Database → Rules (or `firebase deploy --only firestore:rules`).
+Realtime Database Rules do not apply to this app.
+
+The Firebase session code now reads the trusted custom claims `role` and `clientId` rather than
+treating every signed-in account as an administrator. Assign claims only from trusted server code:
+- Admin account: `role: "admin"`
+- Client account: `role: "client"` and `clientId: "<the unique Firestore clients document ID for that user>"`
+
+Each client user must have a **different clientId** if they should see different reports. Reports and
+snapshots are stored under `clients/{clientId}/...`; the client portal only reads published
+`reportSnapshots` for the clientId in the user's token. Do not set clientId from a user-editable
+form or URL as an authorization mechanism.
+
+After changing claims, sign out and sign in again (or force-refresh the ID token) before testing.
+Do not deploy these rules until the admin account has the `role: "admin"` custom claim and each client
+account has the correct `role` and `clientId` claims, or access will be denied by design.

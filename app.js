@@ -441,12 +441,24 @@
   }
   async function ctx() {
     const fb2 = await initFirebase();
-    return { db: fb2.db, F: fb2.sdk.fs };
+    const user = fb2.auth.currentUser;
+    if (!user) throw new Error("Please sign in before accessing your workspace.");
+    return { db: fb2.db, F: fb2.sdk.fs, uid: user.uid };
   }
-  function subRef(F, db, coll, clientId) {
+  // Every signed-in account gets a completely separate workspace. The app's
+  // features remain the same; only the data root changes by Firebase UID.
+  function workspaceRef(F, db, uid, ...parts) {
+    if (!uid) throw new Error("A signed-in account is required.");
+    return F.doc(db, "workspaces", uid, "meta", "root");
+  }
+  function workspaceCollection(F, db, uid, ...parts) {
+    if (!uid) throw new Error("A signed-in account is required.");
+    return F.collection(db, "workspaces", uid, ...parts);
+  }
+  function subRef(F, db, uid, coll, clientId) {
     if (!SUB.has(coll)) throw new Error(`Unknown collection "${coll}"`);
     if (!clientId) throw new Error(`clientId is required for ${coll}`);
-    return F.collection(db, "clients", clientId, coll);
+    return workspaceCollection(F, db, uid, "clients", clientId, coll);
   }
   var SUB, BATCH_LIMIT, firestoreAdapter;
   var init_firestore_service = __esm({
@@ -457,7 +469,7 @@
       firestoreAdapter = {
         name: "firebase",
         async ping() {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             await F.getDoc(F.doc(db, "settings", "app"));
             return true;
@@ -467,72 +479,72 @@
         },
         // ---------- clients ----------
         async listClients() {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const snap = await F.getDocs(F.collection(db, "clients"));
+            const snap = await F.getDocs(workspaceCollection(F, db, uid, "clients"));
             return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           } catch (e) {
             throw readable(e, "load clients");
           }
         },
         async getClient(id) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const d = await F.getDoc(F.doc(db, "clients", id));
+            const d = await F.getDoc(F.doc(db, "workspaces", uid, "clients", id));
             return d.exists() ? { id: d.id, ...d.data() } : null;
           } catch (e) {
             throw readable(e, "load the client");
           }
         },
         async putClient(client) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            await F.setDoc(F.doc(db, "clients", client.id), clean(client));
+            await F.setDoc(F.doc(db, "workspaces", uid, "clients", client.id), clean(client));
             return client;
           } catch (e) {
             throw readable(e, "save the client");
           }
         },
         async getPortalProfile(clientId) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const d = await F.getDoc(F.doc(db, "clients", clientId, "portal", "profile"));
+            const d = await F.getDoc(F.doc(db, "workspaces", uid, "clients", clientId, "portal", "profile"));
             return d.exists() ? d.data() : null;
           } catch (e) {
             throw readable(e, "load the portal profile");
           }
         },
         async putPortalProfile(clientId, profile) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            await F.setDoc(F.doc(db, "clients", clientId, "portal", "profile"), clean(profile));
+            await F.setDoc(F.doc(db, "workspaces", uid, "clients", clientId, "portal", "profile"), clean(profile));
           } catch (e) {
             throw readable(e, "save portal settings");
           }
         },
         // ---------- client-scoped records ----------
         async list(coll, clientId, opts = {}) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             const cons = [];
             if (opts.from) cons.push(F.where("date", ">=", opts.from));
             if (opts.to) cons.push(F.where("date", "<=", opts.to));
             if (opts.publishedOnly) cons.push(F.where("published", "==", true));
-            const snap = await F.getDocs(F.query(subRef(F, db, coll, clientId), ...cons));
+            const snap = await F.getDocs(F.query(subRef(F, db, uid, coll, clientId), ...cons));
             return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
           } catch (e) {
             throw readable(e, `load ${coll}`);
           }
         },
         async listAcross(coll, opts = {}) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             const cons = [];
             if (opts.from) cons.push(F.where("date", ">=", opts.from));
             if (opts.to) cons.push(F.where("date", "<=", opts.to));
-            const clients = await F.getDocs(F.collection(db, "clients"));
+            const clients = await F.getDocs(workspaceCollection(F, db, uid, "clients"));
             const parts = await Promise.all(clients.docs.map(async (c) => {
-              const snap = await F.getDocs(F.query(F.collection(db, "clients", c.id, coll), ...cons));
+              const snap = await F.getDocs(F.query(workspaceCollection(F, db, uid, "clients", c.id, coll), ...cons));
               return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
             }));
             return parts.flat();
@@ -541,29 +553,29 @@
           }
         },
         async get(coll, clientId, id) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const d = await F.getDoc(F.doc(subRef(F, db, coll, clientId), id));
+            const d = await F.getDoc(F.doc(subRef(F, db, uid, coll, clientId), id));
             return d.exists() ? { id: d.id, ...d.data() } : null;
           } catch (e) {
             throw readable(e, `load a ${coll} record`);
           }
         },
         async put(coll, clientId, rec) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            await F.setDoc(F.doc(subRef(F, db, coll, clientId), rec.id), clean({ ...rec, clientId }));
+            await F.setDoc(F.doc(subRef(F, db, uid, coll, clientId), rec.id), clean({ ...rec, clientId }));
             return rec;
           } catch (e) {
             throw readable(e, `save a ${coll} record`);
           }
         },
         async putMany(coll, clientId, recs) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             for (let i = 0; i < recs.length; i += BATCH_LIMIT) {
               const batch = F.writeBatch(db);
-              recs.slice(i, i + BATCH_LIMIT).forEach((r) => batch.set(F.doc(subRef(F, db, coll, clientId), r.id), clean({ ...r, clientId })));
+              recs.slice(i, i + BATCH_LIMIT).forEach((r) => batch.set(F.doc(subRef(F, db, uid, coll, clientId), r.id), clean({ ...r, clientId })));
               await batch.commit();
             }
             return recs.length;
@@ -572,16 +584,16 @@
           }
         },
         async remove(coll, clientId, id) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            await F.deleteDoc(F.doc(subRef(F, db, coll, clientId), id));
+            await F.deleteDoc(F.doc(subRef(F, db, uid, coll, clientId), id));
           } catch (e) {
             throw readable(e, `delete a ${coll} record`);
           }
         },
         // ---------- settings / users / audit ----------
         async getSettings() {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             const d = await F.getDoc(F.doc(db, "settings", "app"));
             return d.exists() ? d.data() : null;
@@ -590,7 +602,7 @@
           }
         },
         async putSettings(s) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
             await F.setDoc(F.doc(db, "settings", "app"), clean(s));
           } catch (e) {
@@ -598,9 +610,9 @@
           }
         },
         async listUsers() {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const s = await F.getDocs(F.collection(db, "users"));
+            const s = await F.getDocs(workspaceCollection(F, db, uid, "users"));
             return s.docs.map((d) => ({ id: d.id, ...d.data() }));
           } catch (e) {
             throw readable(e, "load users");
@@ -610,17 +622,17 @@
           throw new Error("In Firebase mode, client logins are created by the setUserRole Cloud Function (see SETUP-GUIDE.md \xA76).");
         },
         async addAuditLog(entry) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            await F.setDoc(F.doc(db, "auditLogs", entry.id), clean(entry));
+            await F.setDoc(F.doc(db, "workspaces", uid, "auditLogs", entry.id), clean(entry));
           } catch (e) {
             console.warn("Audit log write failed", e);
           }
         },
         async listAuditLogs(limit = 50) {
-          const { db, F } = await ctx();
+          const { db, F, uid } = await ctx();
           try {
-            const s = await F.getDocs(F.query(F.collection(db, "auditLogs"), F.orderBy("at", "desc"), F.limit(limit)));
+            const s = await F.getDocs(F.query(workspaceCollection(F, db, uid, "auditLogs"), F.orderBy("at", "desc"), F.limit(limit)));
             return s.docs.map((d) => ({ id: d.id, ...d.data() }));
           } catch (e) {
             throw readable(e, "load the audit log");
@@ -927,14 +939,15 @@
   async function sessionFromUser(user, forceRefresh = false) {
     if (!user) return null;
     const token = await user.getIdTokenResult(forceRefresh);
+    // All authenticated accounts use the same full-feature app UI. Their data
+    // is isolated by UID in Firestore Rules, not by an admin/client UI role.
     const role = "admin";
     return {
       uid: user.uid,
       email: user.email,
       name: user.displayName || user.email,
       role,
-      // "admin" | "client" | null
-      clientId: token.claims.clientId || null,
+      clientId: null,
       provider: "firebase"
     };
   }
