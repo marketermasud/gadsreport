@@ -1,8 +1,7 @@
 {
   "firestore": { "rules": "firestore.rules" },
-  "functions": { "source": ".", "ignore": ["node_modules", "*.html", "*.css", "*.csv", "*.md", "pdf-lib.min.js", "logo.svg", "firebase-config.js", "app.js", "firestore.rules"] },
   "hosting": {
     "public": ".",
-    "ignore": ["firebase.json", "firestore.rules", "**/.*", "index.js", "package.json", "package-lock.json", "**/node_modules/**", "*.md", "*.csv"]
+    "ignore": ["firebase.json", "firestore.rules", "**/.*", "**/node_modules/**", "*.md", "*.csv"]
   }
 }
