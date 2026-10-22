@@ -2780,16 +2780,109 @@ ${css}</style></head><body><div style="padding:24px 8px">${body}</div></body></h
       ]
     };
   }
+  var AI_KEY_LS = "mppc.aiKey";
+  var AI_DEFAULT_MODELS = { gemini: "gemini-2.5-flash", openai: "gpt-4o-mini", xai: "grok-4" };
+  var aiSvc = (c) => c && (c.service === "openai" || c.service === "xai") ? c.service : "gemini";
+  var AI_SVC_NAME = { gemini: "Gemini", openai: "OpenAI", xai: "xAI Grok" };
+  function looksLikeSecret(v) {
+    return /^(sk-|sk_|AIza|gsk_|xai-)/i.test(String(v || "").trim()) || String(v || "").trim().length > 80;
+  }
+  function getAiLocalConfig() {
+    try {
+      return JSON.parse(localStorage.getItem(AI_KEY_LS) || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
+  function aiSystemPrompt() {
+    return [
+      "You are a senior Google Ads analyst writing for a PPC consultant. You receive a JSON object with the client's measured and calculated performance data.",
+      "Reply with ONE JSON object only (no markdown, no code fences) with exactly these keys:",
+      '{"executiveSummary": string,',
+      ' "improved": [{"text": string, "basis": "MEASURED"|"CALCULATED"}],',
+      ' "deteriorated": [{"text": string, "basis": "MEASURED"|"CALCULATED"}],',
+      ' "potentialCauses": [{"text": string}],',
+      ' "investigate": [{"text": string, "basis": "MEASURED"|"CALCULATED"|"HYPOTHESIS"}],',
+      ' "recommendations": [{"title": string, "supportingData": string, "reason": string, "expectedBenefit": string, "priority": "High"|"Medium"|"Low", "confidence": "High"|"Medium"|"Low", "needsMoreData": boolean, "dataNeeded": string, "reviewDate": "YYYY-MM-DD"}],',
+      ' "risks": [string],',
+      ' "clientExplanation": string (plain, friendly, non-technical, for the client),',
+      ' "dataSufficiency": {"sufficient": boolean, "notes": string}}',
+      "Follow the rules array inside the input strictly."
+    ].join("\n");
+  }
+  function parseAiJson(text) {
+    let t = String(text || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    try {
+      return JSON.parse(t);
+    } catch (e) {
+      const a = t.indexOf("{"), b = t.lastIndexOf("}");
+      if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1));
+      throw new Error("The AI answered, but not in JSON format. Try again.");
+    }
+  }
+  async function aiFetchJson(url, init, label) {
+    let res;
+    try {
+      res = await fetch(url, init);
+    } catch (e) {
+      throw new AiUnavailableError(`Could not reach ${label}. Check your internet connection / ad-blocker. (${e.message})`);
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.message || res.statusText;
+      if (res.status === 401 || res.status === 403 || res.status === 400 && /api key|API_KEY/i.test(msg)) throw new AiUnavailableError(`${label} rejected the API key (${res.status}): ${msg}`);
+      if (res.status === 429) throw new AiUnavailableError(`${label}: quota / rate limit reached (429). ${msg}`);
+      throw new AiUnavailableError(`${label} error ${res.status}: ${msg}`);
+    }
+    return data;
+  }
+  async function runDirectAi(input) {
+    const cfg = getAiLocalConfig();
+    if (!cfg.apiKey) throw new AiUnavailableError("No API key saved in this browser. Open Settings → Integrations → AI provider, choose a service, paste the key into the API key box and Save.");
+    const service = aiSvc(cfg);
+    const model = (cfg.model || AI_DEFAULT_MODELS[service]).trim();
+    const system = aiSystemPrompt();
+    const user = "Analyse this account data and return the JSON object.\n\n" + JSON.stringify(input);
+    let text;
+    if (service === "gemini") {
+      const data = await aiFetchJson(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": cfg.apiKey },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts: [{ text: user }] }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
+        })
+      }, "Gemini");
+      text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+      if (!text) throw new AiUnavailableError(`Gemini returned no text (${data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || "empty response"}).`);
+    } else {
+      const data = await aiFetchJson(service === "xai" ? "https://api.x.ai/v1/chat/completions" : "https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${cfg.apiKey}` },
+        body: JSON.stringify({ model, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user }] })
+      }, AI_SVC_NAME[service]);
+      text = data.choices?.[0]?.message?.content || "";
+      if (!text) throw new AiUnavailableError(`${AI_SVC_NAME[service]} returned an empty response.`);
+    }
+    const output = parseAiJson(text);
+    if (!output?.executiveSummary) throw new Error("The AI response was empty or not in the expected format.");
+    return { output: normalizeOutput(output), provider: `${AI_SVC_NAME[service]} (direct)`, model };
+  }
   async function runAiAnalysis(input, settings) {
-    if (settings.ai?.provider !== "cloud-function") throw new AiUnavailableError("No AI provider is configured. In Settings \u2192 Integrations, enable the Cloud Function provider after deploying functions with an API key secret.");
-    if (getMode() !== "firebase") throw new AiUnavailableError("AI analysis runs through a Firebase Cloud Function, which is only available in Firebase mode. You are in Local Demo Mode.");
+    const prov = settings.ai?.provider;
+    if (prov === "direct") return runDirectAi(input);
+    if (prov !== "cloud-function") throw new AiUnavailableError("No AI provider is configured. Open Settings → Integrations → AI provider, choose “Direct API key”, paste your xAI / Gemini / OpenAI key and Save.");
+    if (getMode() !== "firebase") throw new AiUnavailableError("The Cloud Function provider only works in Firebase mode. Use “Direct API key” in Settings → Integrations, or switch to Firebase mode.");
+    const fname = String(settings.ai.functionName || "aiAnalyze").trim();
+    if (looksLikeSecret(fname) || !/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(fname)) throw new AiUnavailableError("The “Function name” in Settings is not a valid function name (it looks like an API key was pasted there). Set it to aiAnalyze, or use “Direct API key” and paste the key into the API key box.");
     const { callFunction: callFunction2 } = await Promise.resolve().then(() => (init_firebase_init(), firebase_init_exports));
     try {
-      const res = await callFunction2(settings.ai.functionName || "aiAnalyze", { input });
+      const res = await callFunction2(fname, { input });
       if (!res?.output?.executiveSummary) throw new Error("The AI response was empty or not in the expected format.");
       return { output: normalizeOutput(res.output), provider: res.provider || "unknown", model: res.model || "" };
     } catch (e) {
-      if (/not-found|unavailable|internal|failed-precondition/i.test(e.code || "") || /not found/i.test(e.message)) throw new AiUnavailableError(`AI provider unavailable: ${e.message}`);
+      if (/not-found|unavailable|internal|failed-precondition/i.test(e.code || "") || /not found/i.test(e.message)) throw new AiUnavailableError(`AI provider unavailable: ${e.message}. (Is the Cloud Function "${fname}" deployed? See FUNCTIONS-README.md.)`);
       throw e;
     }
   }
@@ -2899,11 +2992,11 @@ ${css}</style></head><body><div style="padding:24px 8px">${body}</div></body></h
     const client = await resolveClientOrPicker(content, { pageTitle: "AI Analysis", intro: "Choose a client to analyse performance and draft recommendations.", href: "ai-analysis.html" });
     if (!client) return;
     const cc = client.currency;
-    const providerReady = settings.ai?.provider === "cloud-function" && getMode() === "firebase";
+    const providerReady = settings.ai?.provider === "direct" && !!getAiLocalConfig().apiKey || settings.ai?.provider === "cloud-function" && getMode() === "firebase";
     content.innerHTML = workspaceHeader(client, "ai") + `
     <div class="page-header"><div><h1 style="font-size:18px">AI analysis & recommendations</h1><p>Drafts are internal until you approve a client version. Nothing is changed in Google Ads.</p></div></div>
     <div class="alert ${providerReady ? "alert-info" : "alert-warning"}">${icon(providerReady ? "info" : "alert")}<div>
-      ${providerReady ? `AI provider: <strong>${esc(settings.ai.providerLabel)}</strong> via Cloud Function <code>${esc(settings.ai.functionName)}</code>. API keys stay on the server.` : `<strong>AI provider not available.</strong> ${getMode() === "local" ? "You are in Local Demo Mode \u2014 AI requests require the Firebase Cloud Function backend." : "Enable the Cloud Function provider in Settings \u2192 Integrations after deploying functions with an API key secret."} You can still generate a <strong>rule-based draft</strong> (deterministic rules, not AI) and edit it.`}
+      ${providerReady ? (settings.ai.provider === "direct" ? `AI provider: <strong>${AI_SVC_NAME[aiSvc(getAiLocalConfig())]}</strong> (direct, key saved in this browser) \u00B7 model <code>${esc(getAiLocalConfig().model || AI_DEFAULT_MODELS[aiSvc(getAiLocalConfig())])}</code>.` : `AI provider: <strong>${esc(settings.ai.providerLabel)}</strong> via Cloud Function <code>${esc(settings.ai.functionName)}</code>. API keys stay on the server.`) : `<strong>AI provider not available.</strong> Open Settings \u2192 Integrations \u2192 AI provider, choose \u201CDirect API key\u201D, paste your xAI / Gemini / OpenAI key and Save. You can still generate a <strong>rule-based draft</strong> (deterministic rules, not AI) and edit it.`}
     </div></div>
     <div class="card mb-2"><div class="filters">
       <div class="field"><label for="aRange">Analysis period</label><select class="select" id="aRange">${RANGE_OPTIONS.filter(([k]) => k !== "today").map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
@@ -6548,25 +6641,76 @@ Result: ${o.outcome}` : ""), o.status]));
     }
     function integrations(body) {
       const st2 = getStatus();
+      const aiCfg = getAiLocalConfig();
       const row = (name2, state, tone, detail, action = "") => `<tr><td><strong>${esc(name2)}</strong></td><td><span class="badge badge-${tone}">${esc(state)}</span></td><td class="small">${detail}</td><td class="text-right">${action}</td></tr>`;
       body.innerHTML = `<div class="card mb-2"><div class="table-wrap"><table class="table"><thead><tr><th>Integration</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody>
       ${row("Firebase (Auth + Firestore)", st2.label, st2.state === "connected" ? "success" : st2.state === "local" ? "warning" : "danger", esc(st2.message || ""), `<a class="btn btn-sm" href="firebase-setup.html">Firebase Setup</a>`)}
-      ${row("AI provider", s.ai.provider === "cloud-function" ? getMode() === "firebase" ? "Enabled" : "Enabled \u2014 needs Firebase mode" : "Not configured", s.ai.provider === "cloud-function" && getMode() === "firebase" ? "success" : "warning", `Requests go to the <code>${esc(s.ai.functionName)}</code> Cloud Function. The Gemini/OpenAI key is a server secret (see SETUP-GUIDE.md \xA77). It is never stored or shown here.`)}
+      ${row("AI provider", s.ai.provider === "direct" ? getAiLocalConfig().apiKey ? "Enabled (direct key)" : "Key missing" : s.ai.provider === "cloud-function" ? getMode() === "firebase" ? "Enabled" : "Enabled \u2014 needs Firebase mode" : "Not configured", s.ai.provider === "direct" ? getAiLocalConfig().apiKey ? "success" : "warning" : s.ai.provider === "cloud-function" && getMode() === "firebase" ? "success" : "warning", s.ai.provider === "direct" ? "Requests go straight from this browser to the AI service. The key is stored only in this browser (never in Firestore)." : `Requests go to the <code>${esc(s.ai.functionName)}</code> Cloud Function. The key is a server secret.`)}
       ${row("Google Ads API", "Not connected", "warning", "Interface prepared in <code>functions/src/google-ads.js</code>. Requires a developer token, OAuth client and server-side refresh token. No live data is fabricated \u2014 use CSV import until connected.")}
       ${row("Firebase Storage", USE_STORAGE ? "Enabled" : "Disabled", USE_STORAGE ? "success" : "warning", USE_STORAGE ? "Client logos upload to Storage." : "Logos are stored as small images in the client record. Enable with <code>USE_STORAGE</code> in firebase-config.js.")}
       ${row("Scheduled automation", "Not active", "warning", "Daily sync, alerts and report reminders run only after deploying the scheduled Cloud Functions with a configured data source. Nothing runs in the background today.")}
     </tbody></table></div></div>
     <div class="card" style="max-width:760px"><h2>AI provider</h2><form id="af" class="form-grid">
-      <div class="field"><label>Provider</label><select class="select" name="provider"><option value="none" ${s.ai.provider === "none" ? "selected" : ""}>None (rule-based drafts only)</option><option value="cloud-function" ${s.ai.provider === "cloud-function" ? "selected" : ""}>Cloud Function (Gemini / OpenAI)</option></select></div>
-      <div class="field"><label>Function name</label><input class="input" name="functionName" value="${esc(s.ai.functionName)}"></div>
-      <div class="field full"><label>Label shown to admins</label><input class="input" name="providerLabel" value="${esc(s.ai.providerLabel)}"></div>
-      <div class="full alert alert-info">${icon("lock")}<div>There is deliberately no API-key field. Set <code>AI_PROVIDER</code> and <code>GEMINI_API_KEY</code> or <code>OPENAI_API_KEY</code> as Firebase secrets: <code>firebase functions:secrets:set GEMINI_API_KEY</code>.</div></div>
-      <div class="full"><button class="btn btn-primary" type="submit">Save</button></div></form></div>`;
-      $("#af").addEventListener("submit", async (e) => {
+      <div class="field full"><label>Provider</label><select class="select" name="provider">
+        <option value="none" ${s.ai.provider === "none" ? "selected" : ""}>None (rule-based drafts only)</option>
+        <option value="direct" ${s.ai.provider === "direct" ? "selected" : ""}>Direct API key (Gemini / OpenAI) — easiest</option>
+        <option value="cloud-function" ${s.ai.provider === "cloud-function" ? "selected" : ""}>Cloud Function (advanced, needs deployed function)</option></select></div>
+      <div id="directBox" class="full form-grid" style="grid-column:1/-1">
+        <div class="field"><label>Service</label><select class="select" name="service"><option value="xai" ${aiSvc(aiCfg) === "xai" ? "selected" : ""}>xAI Grok (key starts with xai-…)</option><option value="gemini" ${aiSvc(aiCfg) === "gemini" ? "selected" : ""}>Google Gemini (key starts with AIza…)</option><option value="openai" ${aiSvc(aiCfg) === "openai" ? "selected" : ""}>OpenAI (key starts with sk-…)</option></select></div>
+        <div class="field"><label>Model (optional)</label><input class="input" name="model" placeholder="grok-4 / gemini-2.5-flash / gpt-4o-mini" value="${esc(aiCfg.model || "")}"></div>
+        <div class="field full"><label>API key</label><input class="input" type="password" name="apiKey" autocomplete="off" placeholder="${aiCfg.apiKey ? "Saved in this browser \u2014 leave blank to keep, or paste a new key" : "Paste your API key here"}"></div>
+        <div class="full alert alert-info">${icon("lock")}<div>The key is stored <strong>only in this browser</strong> (localStorage). It is not saved to Firestore or any server. On another computer you need to paste it again. Use a key with a spending limit, and never use this on a shared computer.</div></div>
+      </div>
+      <div id="cfBox" class="full form-grid" style="grid-column:1/-1">
+        <div class="field"><label>Function name</label><input class="input" name="functionName" value="${esc(looksLikeSecret(s.ai.functionName) ? "aiAnalyze" : s.ai.functionName)}"></div>
+        <div class="field"><label>Label shown to admins</label><input class="input" name="providerLabel" value="${esc(looksLikeSecret(s.ai.providerLabel) ? "Gemini or OpenAI via Cloud Function" : s.ai.providerLabel)}"></div>
+        <div class="full alert alert-info">${icon("lock")}<div>Do <strong>not</strong> paste an API key in these two boxes — they are only names. Server secrets: <code>firebase functions:secrets:set GEMINI_API_KEY</code> (see <code>FUNCTIONS-README.md</code>).</div></div>
+      </div>
+      <div class="full"><button class="btn btn-primary" type="submit">Save</button> <button class="btn" type="button" id="aiClear">Remove saved key</button></div></form></div>`;
+      const aiForm = $("#af");
+      const syncAi = () => {
+        const v = aiForm.elements.provider.value;
+        $("#directBox").classList.toggle("hidden", v !== "direct");
+        $("#cfBox").classList.toggle("hidden", v !== "cloud-function");
+      };
+      aiForm.elements.provider.addEventListener("change", syncAi);
+      syncAi();
+      $("#aiClear").addEventListener("click", () => {
+        try {
+          localStorage.removeItem(AI_KEY_LS);
+        } catch (e) {
+        }
+        toast("Saved API key removed from this browser.", "success");
+        integrations(body);
+      });
+      aiForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const f2 = e.target.elements;
-        s.ai = { provider: f2.provider.value, functionName: f2.functionName.value.trim() || "aiAnalyze", providerLabel: f2.providerLabel.value.trim() };
+        const provider = f2.provider.value;
+        if (provider === "direct") {
+          const old = getAiLocalConfig();
+          const typed = f2.apiKey.value.trim();
+          const apiKey = typed || old.apiKey || "";
+          if (!apiKey) return toast("Paste your API key first.", "error");
+          if (/\s/.test(apiKey)) return toast("The API key must not contain spaces.", "error");
+          const service = f2.service.value;
+          const want = { gemini: [/^AIza/, "AIza"], openai: [/^sk-/, "sk-"], xai: [/^xai-/, "xai-"] }[service];
+          if (!want[0].test(apiKey)) return toast(`A ${AI_SVC_NAME[service]} key starts with ${want[1]}… — this key looks different. Check the Service you selected.`, "error");
+          try {
+            localStorage.setItem(AI_KEY_LS, JSON.stringify({ service, model: f2.model.value.trim(), apiKey }));
+          } catch (err) {
+            return toast("This browser blocked saving the key (private mode?).", "error");
+          }
+          s.ai = { provider: "direct", functionName: "aiAnalyze", providerLabel: `${AI_SVC_NAME[service]} (direct)` };
+        } else {
+          const fn = f2.functionName.value.trim() || "aiAnalyze";
+          const lb = f2.providerLabel.value.trim();
+          if (provider === "cloud-function" && (looksLikeSecret(fn) || !/^[A-Za-z][A-Za-z0-9_-]{0,62}$/.test(fn))) return toast("Function name must be a short name like aiAnalyze — not an API key.", "error");
+          if (looksLikeSecret(lb)) return toast("The label must be plain text — not an API key.", "error");
+          s.ai = { provider, functionName: fn, providerLabel: lb || "Gemini or OpenAI via Cloud Function" };
+        }
         await persist2(e.submitter);
+        integrations(body);
       });
     }
     async function access(body) {

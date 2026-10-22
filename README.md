@@ -23,7 +23,7 @@
 - `firestore.rules`-এ ইমেইল না বদলালে কেউই (আপনিও) ডেটা পড়তে পারবেন না — এটা ইচ্ছাকৃত সুরক্ষা।
 - Firebase লাগে ইন্টারনেট। ফন্ট ও চার্টের জন্যও ইন্টারনেট লাগে (না থাকলে সিস্টেম ফন্ট ও সাধারণ SVG চার্ট)।
 - পাসওয়ার্ড ভুলে গেলে লগইন পেজের **Forgot password?** বা Firebase Console → Users থেকে রিসেট করুন।
-- AI অ্যানালাইসিসে বাইরের AI সংযোগ বন্ধ; "rule-based draft" কাজ করবে।
+- AI অ্যানালাইসিস: Settings → Integrations → AI provider → **Direct API key** বেছে Gemini/OpenAI key **API key বক্সে** বসিয়ে Save করুন। (Function name/Label ঘরে key দেবেন না।) Key শুধু ওই ব্রাউজারে থাকে। key ছাড়া "rule-based draft" কাজ করবে।
 - ক্লায়েন্ট পোর্টাল/শেয়ার-লিংক এই ভার্সনে ব্যবহারের জন্য নয়।
 - `.csv` ফাইল দুটো ইমপোর্ট চেষ্টা করার নমুনা।
 
